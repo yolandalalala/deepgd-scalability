@@ -1,5 +1,5 @@
 .ipynb_checkpoints
-datasets
+/datasets
 .idea
 *.pt
 __pycache__
