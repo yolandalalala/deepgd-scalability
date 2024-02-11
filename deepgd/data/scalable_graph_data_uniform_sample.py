@@ -6,7 +6,7 @@ from collections import defaultdict
 import random
 
 
-class ScalableGraphData(GraphData):
+class ScalableGraphDataUniformSample(GraphData):
 
     edge_index: torch.Tensor
     edge_attr: torch.Tensor
@@ -17,6 +17,7 @@ class ScalableGraphData(GraphData):
     def compute_edge_index_edge_spl(self, G, device, landmarks, random_edges, **kwargs):
         lms = self.get_maxmin_landmarks(G, landmarks)
         lmsp = self.get_lmsp(G, lms, device)
+
         landmark_edge_index = self.get_landmark_edge_index(G, lms, device)
         landmark_edge_spl = self.get_landmark_edge_sp(G, lms, lmsp, device)
 
@@ -99,7 +100,9 @@ class ScalableGraphData(GraphData):
         # Jeong Han Kim and Van H. Vu, Generating random regular graphs, Proceedings of the
         # thirty-fifth ACM symposium on Theory of computing, San Diego, CA, USA, pp 213–222, 2003.
         # http://portal.acm.org/citation.cfm?id=780542.780576
-        d = int(max(min(d, n ** (1/3)), 2) // 2 * 2)  # This guarantees that the complexity is O(n)
+        # This guarantees that the complexity is O(n)
+        d = min(d, int(n ** (1/3)))
+        d = max(d if d * n % 2 == 0 else d - 1, 1 if n % 2 == 0 else 2)
         random_edges = nx.to_directed(nx.random_regular_graph(d, n)).edges
         return torch.tensor(list(random_edges), device=device).T
 

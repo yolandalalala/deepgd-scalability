@@ -1,92 +1,75 @@
-from . import DATA_ROOT
+from torch_geometric.data.data import BaseData
+
+from .graph_drawing_dataset import GraphDrawingDataset
+from ..data import GraphData
 
 import os
 import re
+import shutil
+from functools import cached_property
+from typing import Callable, Optional, TypeVar, Iterator, Type, Iterable
+from typing_extensions import Unpack
 
-import numpy as np
 import torch
 import torch_geometric as pyg
+from torch_geometric.data import Dataset, Data
 import networkx as nx
 from tqdm.auto import tqdm
 
+T = TypeVar("T", bound=GraphData)
 
-class RomeDataset(pyg.data.InMemoryDataset):
-    def __init__(self, *,
-                 url='http://www.graphdrawing.org/download/rome-graphml.tgz',
-                 root=f'{DATA_ROOT}/Rome',
-                 layout_initializer=None,
-                 transform=None,
-                 pre_transform=None,
-                 pre_filter=None):
-        self.url = url
-        self.initializer = layout_initializer or nx.drawing.random_layout
-        super().__init__(root, transform, pre_transform, pre_filter)
-        self.data, self.slices = torch.load(self.processed_paths[0])
 
-    @property
-    def raw_file_names(self):
-        metafile = "rome/Graph.log"
-        if os.path.exists(metadata_path := f'{self.raw_dir}/{metafile}'):
-            return list(map(lambda f: f'rome/{f}.graphml',
-                            self.get_graph_names(metadata_path)))
-        else:
-            return [metafile]
+class RomeDataset(GraphDrawingDataset.from_cls(pyg.data.InMemoryDataset)):
 
-    @property
-    def processed_file_names(self):
-        return ['data.pt']
+    URL = "https://www.graphdrawing.org/download/rome-graphml.tgz"
+    GRAPH_NAME_REGEX = re.compile(r"grafo(\d+)\.(\d+)")
 
-    @classmethod
-    def get_graph_names(cls, logfile):
+    def __init__(self, **kwargs: Unpack[GraphDrawingDataset.Args]):
+        super().__init__(**kwargs)
+
+    def _parse_metadata(self, logfile: str) -> Iterator[str]:
         with open(logfile) as fin:
             for line in fin.readlines():
-                if match := re.search(r'name: (grafo\d+\.\d+)', line):
-                    yield f'{match.group(1)}'
+                if match := self.GRAPH_NAME_REGEX.search(line):
+                    yield match.group(0)
 
-    def process_raw(self):
-        graphmls = sorted(self.raw_paths,
-                          key=lambda x: int(re.search(r'grafo(\d+)', x).group(1)))
-        for file in tqdm(graphmls, desc=f"Loading graphs"):
-            G = nx.read_graphml(file)
-            if nx.is_connected(G):
-                yield nx.convert_node_labels_to_integers(G)
+    @property
+    def index_file_name(self):
+        return "index.txt"
 
-    def convert(self, G):
-        apsp = dict(nx.all_pairs_shortest_path_length(G))
-        init_pos = torch.tensor(np.array(list(self.initializer(G).values())))
-        full_edges, attr_d = zip(*[((u, v), d) for u in apsp for v, d in apsp[u].items()])
-        raw_edge_index = pyg.utils.to_undirected(torch.tensor(list(G.edges)).T)
-        full_edge_index, d = pyg.utils.remove_self_loops(*pyg.utils.to_undirected(
-            torch.tensor(full_edges).T, torch.tensor(attr_d)
-        ))
-        k = 1 / d ** 2
-        full_edge_attr = torch.stack([d, k], dim=-1)
-        return pyg.data.Data(
-            G=G,
-            x=init_pos,
-            init_pos=init_pos,
-            edge_index=full_edge_index,
-            edge_attr=full_edge_attr,
-            raw_edge_index=raw_edge_index,
-            full_edge_index=full_edge_index,
-            full_edge_attr=full_edge_attr,
-            d=d,
-            n=G.number_of_nodes(),
-            m=G.number_of_edges(),
-        )
+    @property
+    def raw_file_names(self) -> list[str]:
+        metadata_file = "rome/Graph.log"
+        if os.path.exists(metadata_path := os.path.join(self.raw_dir, metadata_file)):
+            return list(map(lambda f: f"rome/{f}.graphml", self._parse_metadata(metadata_path)))
+        return [metadata_file]
 
-    def download(self):
-        pyg.data.download_url(self.url, self.raw_dir)
+    @property
+    def data_file_names(self):
+        return ["data.pt"]
+
+    def get_data_file_name(self, G):
+        return None
+
+    def download(self) -> None:
+        pyg.data.download_url(self.URL, self.raw_dir)
         pyg.data.extract_tar(f'{self.raw_dir}/rome-graphml.tgz', self.raw_dir)
 
+    def generate(self) -> Iterator[nx.Graph]:
+        def key(path):
+            match = self.GRAPH_NAME_REGEX.search(path)
+            return int(match.group(1)), int(match.group(2))
+
+        for file in tqdm(sorted(self.raw_paths, key=key), desc=f"Loading graphs"):
+            name = self.GRAPH_NAME_REGEX.search(file).group(0)
+            G = nx.read_graphml(file)
+            yield name, G
+
     def process(self):
-        data_list = map(self.convert, self.process_raw())
+        super().process()
 
-        if self.pre_filter is not None:
-            data_list = filter(self.pre_filter, data_list)
+    def save_data(self, data_iterable: Iterable[T]) -> None:
+        self.save(list(data_iterable), self.data_paths[0])
 
-        if self.pre_transform is not None:
-            data_list = map(self.pre_transform, data_list)
-
-        data, slices = self.collate(list(data_list))
-        torch.save((data, slices), self.processed_paths[0])
+    def load_data(self):
+        self.load(self.data_paths[0])

@@ -13,13 +13,13 @@ class DenseGraphData(GraphData):
     raw_edge_attr: torch.Tensor
     edge_weight: torch.Tensor
 
-    def compute_edge_index_sp(self, G, device, **kwargs):
+    def compute_edge_index_edge_spl(self, G, device, **kwargs):
         n = G.number_of_nodes()
         edges = nx.to_directed(nx.complete_graph(n)).edges
         edge_index = torch.tensor(list(edges), device=device).T
-        sp = self.compute_apsp(G, device)[tuple(edge_index)]
+        edge_spl = self.compute_apsp(G, device)[tuple(edge_index)]
 
-        return edge_index, sp
+        return edge_index, edge_spl
 
     @classmethod
     def compute_apsp(cls, G, device):

@@ -10,7 +10,7 @@ import torch_scatter
 from tqdm.auto import *
 
 from deepgd.model_old import DeepGD, Stress
-from deepgd.data import ScalableGraphData
+from deepgd.data import ScalableGraphDataUniformSample
 from deepgd.datasets import SuiteSparseDataset
 
 device = 'cpu'
@@ -24,7 +24,7 @@ dataset = SuiteSparseDataset(
     min_nodes=0,
     max_nodes=7500,
     limit=1000,
-    datatype=ScalableGraphData,
+    datatype=ScalableGraphDataUniformSample,
     datatype_args=dict(
         device=device,
         landmarks=20,

@@ -2,5 +2,6 @@
 /datasets
 .idea
 *.pt
+*.ckpt
 __pycache__
 *.zip
