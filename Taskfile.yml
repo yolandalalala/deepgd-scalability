@@ -1,0 +1,11 @@
+version: '3'
+
+tasks:
+  zip-datasets:
+    cmds:
+      - zip -r datasets.zip datasets/
+
+  upload-datasets:
+    cmds:
+      - task: zip-datasets
+      - gsutil cp datasets.zip gs://xiaoqiwang-public/datasets.zip

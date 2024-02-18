@@ -82,7 +82,7 @@ class SuiteSparseDataset(GraphDrawingDataset.from_cls(pyg.data.Dataset)):
     def save_data(self, data_iterable: Iterable[T]) -> None:
         for data in data_iterable:
             print('Saving', data.G.graph['name'])
-            torch.save(data, self.get_processed_path(data.G))
+            torch.save(data, self.get_data_path(data.G))
 
     def load_data(self):
         pass
