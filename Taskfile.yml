@@ -9,3 +9,7 @@ tasks:
     cmds:
       - task: zip-datasets
       - gsutil cp datasets.zip gs://xiaoqiwang-public/datasets.zip
+
+  clean:
+    cmds:
+      - rm datasets.zip

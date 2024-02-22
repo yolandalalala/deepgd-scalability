@@ -52,7 +52,7 @@ class SuiteSparseDataset(GraphDrawingDataset.from_cls(pyg.data.Dataset)):
 
     @property
     def raw_file_names(self):
-        return list(map(lambda graph: f"{graph.name}.mtx", self.graph_list))
+        return list(map(lambda graph: f"{graph.name.lower()}.mtx", self.graph_list))
 
     @property
     def data_file_names(self):
@@ -65,8 +65,8 @@ class SuiteSparseDataset(GraphDrawingDataset.from_cls(pyg.data.Dataset)):
         for raw_name, raw_path, graph in zip(self.raw_file_names, self.raw_paths, self.graph_list):
             if not os.path.exists(raw_path):
                 graph.download(destpath=self.raw_dir, extract=True)
-                os.rename(os.path.join(self.raw_dir, graph.name, raw_name), raw_path)
-                shutil.rmtree(os.path.join(self.raw_dir, graph.name))
+                os.rename(os.path.join(self.raw_dir, graph.name.lower(), raw_name), raw_path)
+                shutil.rmtree(os.path.join(self.raw_dir, graph.name.lower()))
 
     def generate(self) -> Iterable[tuple[str, nx.Graph]]:
         # TODO: skipped generating G if already exists, but need to have a way to write the name to index file
