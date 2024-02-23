@@ -7,7 +7,7 @@ from typing import Optional
 from attrs import define, frozen
 
 import torch
-from torch import nn, jit
+from torch import nn, jit, FloatTensor, LongTensor
 import torch_geometric as pyg
 
 
@@ -31,6 +31,7 @@ class NNConvBasicLayer(nn.Module):
         aggr: str = "mean"
         root_weight: bool = True
 
+    layer_index: int
     params: Params
     config: Config = Config()
 
@@ -61,10 +62,20 @@ class NNConvBasicLayer(nn.Module):
         self.skip: SkipConnection = SkipConnection(in_dim=self.params.in_dim, out_dim=self.params.out_dim)
 
     def forward(self, *,
-                node_feat: torch.FloatTensor,
-                edge_feat: torch.FloatTensor,
-                edge_index: torch.LongTensor,
-                batch_index: torch.LongTensor) -> torch.FloatTensor:
+                node_feat: FloatTensor,
+                edge_feat: FloatTensor,
+                edge_index: LongTensor,
+                batch_index: LongTensor,
+                num_sampled_nodes_per_hop: list[int],
+                num_sampled_edges_per_hop: list[int]) -> tuple[FloatTensor, LongTensor, FloatTensor]:
+        node_feat, edge_index, edge_feat = pyg.utils.trim_to_layer(
+            layer=self.layer_index,
+            num_sampled_nodes_per_hop=num_sampled_nodes_per_hop,
+            num_sampled_edges_per_hop=num_sampled_edges_per_hop,
+            x=node_feat,
+            edge_index=edge_index,
+            edge_attr=edge_feat
+        )
         inputs = outputs = node_feat
         outputs = self.conv(x=outputs, edge_index=edge_index, edge_attr=edge_feat)
         if self.with_dense:
@@ -77,7 +88,7 @@ class NNConvBasicLayer(nn.Module):
             outputs = self.dp(outputs)
         if self.residual:
             outputs = self.skip(block_input=inputs, block_output=outputs)
-        return outputs
+        return outputs, edge_index, edge_feat
 
 
 NNConvBasicLayer.__annotations__.clear()

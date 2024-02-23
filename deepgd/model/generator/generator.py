@@ -103,6 +103,7 @@ class Generator(nn.Module):
         self.block_list: nn.ModuleList = nn.ModuleList()
         self.block_list.append(
             GeneratorBlock(
+                start_layer_index=0,
                 config=GeneratorBlock.Config(
                     in_dim=self.params.node_attr_dim,
                     hidden_dims=[],
@@ -117,18 +118,20 @@ class Generator(nn.Module):
                 eps=self.eps
             )
         )
-        self.block_list.extend([
-            GeneratorBlock(
-                config=main_block_config,
-                edge_net_config=main_edge_net_config,
-                gnn_config=main_gnn_config,
-                edge_feat_expansion=self.edge_feat_expansion,
-                eps=self.eps
+        for _ in range(self.params.num_blocks):
+            self.block_list.append(
+                GeneratorBlock(
+                    start_layer_index=self.block_list[-1].next_layer_index,
+                    config=main_block_config,
+                    edge_net_config=main_edge_net_config,
+                    gnn_config=main_gnn_config,
+                    edge_feat_expansion=self.edge_feat_expansion,
+                    eps=self.eps
+                )
             )
-            for _ in range(self.params.num_blocks)
-        ])
         self.block_list.append(
             GeneratorBlock(
+                start_layer_index=self.block_list[-1].next_layer_index,
                 config=GeneratorBlock.Config(
                     in_dim=self.params.block_output_dim,
                     hidden_dims=[],
@@ -155,14 +158,20 @@ class Generator(nn.Module):
                 init_pos: torch.FloatTensor,
                 edge_index: torch.LongTensor,
                 edge_attr: torch.FloatTensor,
-                batch_index: torch.LongTensor) -> torch.Tensor:
+                batch_index: torch.LongTensor,
+                num_sampled_nodes_per_hop: list[int],
+                num_sampled_edges_per_hop: list[int]) -> torch.Tensor:
         inputs = outputs = init_pos
         for block in self.block_list:
-            outputs = block(node_feat=outputs,
-                            node_attr=inputs,
-                            edge_index=edge_index,
-                            edge_attr=edge_attr,
-                            batch_index=batch_index)
+            outputs, inputs, edge_index, edge_attr = block(
+                node_feat=outputs,
+                node_attr=inputs,
+                edge_index=edge_index,
+                edge_attr=edge_attr,
+                batch_index=batch_index,
+                num_sampled_nodes_per_hop=num_sampled_nodes_per_hop,
+                num_sampled_edges_per_hop=num_sampled_edges_per_hop
+            )
 
         # TODO: Use input as initial layout
         #   outputs += normalized_inputs
@@ -171,6 +180,10 @@ class Generator(nn.Module):
         # TODO: ScaleNet - learn best scaling
 
         return outputs
+
+    @property
+    def total_layers(self):
+        return self.block_list[-1].next_layer_index
 
 
 Generator.__annotations__.clear()

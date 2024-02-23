@@ -6,7 +6,7 @@ from typing import Optional
 from attrs import define, frozen
 
 import torch
-from torch import nn, jit
+from torch import nn, jit, FloatTensor, LongTensor
 
 
 @define(kw_only=True, eq=False, repr=False, slots=False)
@@ -31,6 +31,7 @@ class NNConvLayer(nn.Module):
         dp: float = 0.0
         residual: bool = True
 
+    layer_index: int
     params: NNConvBasicLayer.Params
     nnconv_config: NNConvConfig = NNConvConfig()
     edge_net_config: EdgeNetConfig = EdgeNetConfig()
@@ -39,6 +40,7 @@ class NNConvLayer(nn.Module):
         super().__init__()
 
         self.nnconv_layer: NNConvBasicLayer = NNConvBasicLayer(
+            layer_index=self.layer_index,
             params=self.params,
             config=NNConvBasicLayer.Config(
                 edge_net=MLP(
@@ -66,15 +68,19 @@ class NNConvLayer(nn.Module):
         )
 
     def forward(self, *,
-                node_feat: torch.FloatTensor,
-                edge_feat: torch.FloatTensor,
-                edge_index: torch.LongTensor,
-                batch_index: torch.LongTensor) -> torch.FloatTensor:
+                node_feat: FloatTensor,
+                edge_feat: FloatTensor,
+                edge_index: LongTensor,
+                batch_index: LongTensor,
+                num_sampled_nodes_per_hop: list[int],
+                num_sampled_edges_per_hop: list[int]) -> tuple[FloatTensor, LongTensor, FloatTensor]:
         return self.nnconv_layer(
             node_feat=node_feat,
             edge_feat=edge_feat,
             edge_index=edge_index,
-            batch_index=batch_index
+            batch_index=batch_index,
+            num_sampled_nodes_per_hop=num_sampled_nodes_per_hop,
+            num_sampled_edges_per_hop=num_sampled_edges_per_hop
         )
 
 

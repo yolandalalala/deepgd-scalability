@@ -6,7 +6,7 @@ from attrs import define, frozen
 from dataclasses import dataclass
 
 import torch
-from torch import nn, jit
+from torch import nn, jit, FloatTensor, LongTensor
 
 
 @define(kw_only=True, eq=False, repr=False, slots=False)
@@ -38,6 +38,7 @@ class GeneratorLayer(nn.Module):
         act: Optional[str] = "leaky_relu"
         dp: float = 0.0
 
+    layer_index: int
     config: Config
     edge_net_config: EdgeNetConfig = EdgeNetConfig()
     gnn_config: GNNConfig = GNNConfig()
@@ -57,6 +58,7 @@ class GeneratorLayer(nn.Module):
         )
 
         self.gnn_layer: NNConvLayer = NNConvLayer(
+            layer_index=self.layer_index,
             params=NNConvBasicLayer.Params(
                 in_dim=self.config.in_dim,
                 out_dim=self.config.out_dim,
@@ -82,10 +84,12 @@ class GeneratorLayer(nn.Module):
         )
 
     def forward(self, *,
-                node_feat: torch.FloatTensor,
-                edge_feat: torch.FloatTensor,
-                edge_index: torch.LongTensor,
-                batch_index: torch.LongTensor) -> torch.FloatTensor:
+                node_feat: FloatTensor,
+                edge_feat: FloatTensor,
+                edge_index: LongTensor,
+                batch_index: LongTensor,
+                num_sampled_nodes_per_hop: list[int],
+                num_sampled_edges_per_hop: list[int]) -> tuple[FloatTensor, LongTensor, FloatTensor]:
         return self.gnn_layer(
             node_feat=node_feat,
             edge_feat=self.edge_feat_provider(
@@ -94,7 +98,9 @@ class GeneratorLayer(nn.Module):
                 edge_attr=edge_feat
             ),
             edge_index=edge_index,
-            batch_index=batch_index
+            batch_index=batch_index,
+            num_sampled_nodes_per_hop=num_sampled_nodes_per_hop,
+            num_sampled_edges_per_hop=num_sampled_edges_per_hop
         )
 
 

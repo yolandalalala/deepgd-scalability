@@ -10,7 +10,9 @@ from typing import Optional
 from functools import cached_property
 
 import torch
-from torch import nn, jit
+from torch import nn, jit, FloatTensor, LongTensor
+
+import torch_geometric as pyg
 
 
 @define(kw_only=True, eq=False, repr=False, slots=False)
@@ -36,6 +38,7 @@ class GeneratorBlock(nn.Module):
         }
         """
 
+    start_layer_index: int
     config: Config
     edge_net_config: GeneratorLayer.EdgeNetConfig
     gnn_config: GeneratorLayer.GNNConfig
@@ -63,14 +66,16 @@ class GeneratorBlock(nn.Module):
         dims = [self.config.in_dim] + self.config.hidden_dims + [self.config.out_dim]
 
         self.first_layer: GeneratorLayer = self._make_layer(
+            index=self.start_layer_index,
             in_dim=dims[0],
             out_dim=dims[1],
             router=self.first_layer_feature_router
         )
 
         self.rest_layers: nn.ModuleList[GeneratorLayer] = nn.ModuleList()
-        for layer_index, (in_dim, out_dim) in enumerate(zip(dims[1:-1], dims[2:])):
+        for layer_index, (in_dim, out_dim) in enumerate(zip(dims[1:-1], dims[2:]), start=self.start_layer_index + 1):
             self.rest_layers.append(self._make_layer(
+                index= layer_index,
                 in_dim=in_dim,
                 out_dim=out_dim,
                 router=self.rest_layers_feature_router
@@ -111,10 +116,12 @@ class GeneratorBlock(nn.Module):
         )
 
     def _make_layer(self, *,
+                    index: int,
                     in_dim: int,
                     out_dim: int,
                     router: GeneratorFeatureRouter) -> GeneratorLayer:
         return GeneratorLayer(
+            layer_index=index,
             config=GeneratorLayer.Config(
                 in_dim=in_dim,
                 out_dim=out_dim,
@@ -130,37 +137,72 @@ class GeneratorBlock(nn.Module):
         )
 
     def forward(self, *,
-                node_feat: torch.FloatTensor,
-                node_attr: torch.FloatTensor,
-                edge_attr: torch.FloatTensor,
-                edge_index: torch.LongTensor,
-                batch_index: torch.LongTensor) -> torch.FloatTensor:
+                node_feat: FloatTensor,
+                node_attr: FloatTensor,
+                edge_index: LongTensor,
+                edge_attr: FloatTensor,
+                batch_index: LongTensor,
+                num_sampled_nodes_per_hop: list[int],
+                num_sampled_edges_per_hop: list[int]) -> tuple[FloatTensor, FloatTensor, LongTensor, FloatTensor]:
 
-        outputs = self.first_layer(
-            node_feat=node_feat,
-            edge_feat=self.first_layer_feature_router(
-                block_input=node_feat,
-                raw_input=node_attr,
-                edge_attr=edge_attr,
-                edge_index=edge_index
-            ),
-            edge_index=edge_index,
-            batch_index=batch_index
-        )
+        init_edge_index = edge_index
 
-        rest_layers_edge_feat = self.rest_layers_feature_router(
+        first_layer_edge_feat = self.first_layer_feature_router(
             block_input=node_feat,
             raw_input=node_attr,
             edge_attr=edge_attr,
-            edge_index=edge_index
+            edge_index=init_edge_index
+        )
+
+        _, _, rest_layers_edge_feat = pyg.utils.trim_to_layer(
+            layer=self.start_layer_index,
+            x=node_feat,
+            edge_index=init_edge_index,
+            edge_attr=self.rest_layers_feature_router(
+                block_input=node_feat,
+                raw_input=node_attr,
+                edge_attr=edge_attr,
+                edge_index=init_edge_index
+            ),
+            num_sampled_nodes_per_hop=num_sampled_nodes_per_hop,
+            num_sampled_edges_per_hop=num_sampled_edges_per_hop
+        )
+
+        outputs, edge_index, _ = self.first_layer(
+            node_feat=node_feat,
+            edge_feat=first_layer_edge_feat,
+            edge_index=init_edge_index,
+            batch_index=batch_index,
+            num_sampled_nodes_per_hop=num_sampled_nodes_per_hop,
+            num_sampled_edges_per_hop=num_sampled_edges_per_hop
         )
 
         for layer in self.rest_layers:
-            outputs = layer(
+            outputs, edge_index, rest_layers_edge_feat = layer(
                 node_feat=outputs,
                 edge_feat=rest_layers_edge_feat,
                 edge_index=edge_index,
-                batch_index=batch_index
+                batch_index=batch_index,
+                num_sampled_nodes_per_hop=num_sampled_nodes_per_hop,
+                num_sampled_edges_per_hop=num_sampled_edges_per_hop
+            )
+
+        edge_index = init_edge_index
+        for layer in range(self.start_layer_index, self.next_layer_index):
+            node_feat, _, _ = pyg.utils.trim_to_layer(
+                layer=layer,
+                x=node_feat,
+                edge_index=edge_index,
+                num_sampled_nodes_per_hop=num_sampled_nodes_per_hop,
+                num_sampled_edges_per_hop=num_sampled_edges_per_hop
+            )
+            node_attr, edge_index, edge_attr = pyg.utils.trim_to_layer(
+                layer=layer,
+                x=node_attr,
+                edge_index=edge_index,
+                edge_attr=edge_attr,
+                num_sampled_nodes_per_hop=num_sampled_nodes_per_hop,
+                num_sampled_edges_per_hop=num_sampled_edges_per_hop
             )
 
         if self.residual:
@@ -168,7 +210,14 @@ class GeneratorBlock(nn.Module):
                 block_input=node_feat,
                 block_output=outputs
             )
-        return outputs
+        return outputs, node_attr, edge_index, edge_attr
+
+    def __len__(self):
+        return 1 + len(self.rest_layers)
+
+    @property
+    def next_layer_index(self):
+        return self.start_layer_index + len(self)
 
 
 GeneratorBlock.__annotations__.clear()
