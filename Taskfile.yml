@@ -3,7 +3,7 @@ version: '3'
 tasks:
   zip-datasets:
     cmds:
-      - zip -r datasets.zip datasets/
+      - zip -r datasets.zip datasets/ -x "*/raw/*"
 
   upload-datasets:
     cmds:

@@ -9,7 +9,7 @@ from dataclasses import dataclass
 from typing import Optional
 
 import torch
-from torch import nn
+from torch import nn, FloatTensor, LongTensor
 
 
 @ignore_sentinel
@@ -155,12 +155,12 @@ class Generator(nn.Module):
         )
 
     def forward(self,
-                init_pos: torch.FloatTensor,
-                edge_index: torch.LongTensor,
-                edge_attr: torch.FloatTensor,
-                batch_index: torch.LongTensor,
+                init_pos: FloatTensor,
+                edge_index: LongTensor,
+                edge_attr: FloatTensor,
+                batch_index: LongTensor,
                 num_sampled_nodes_per_hop: list[int],
-                num_sampled_edges_per_hop: list[int]) -> torch.Tensor:
+                num_sampled_edges_per_hop: list[int]) -> tuple[FloatTensor, LongTensor, FloatTensor]:
         inputs = outputs = init_pos
         for block in self.block_list:
             outputs, inputs, edge_index, edge_attr = block(
@@ -179,7 +179,7 @@ class Generator(nn.Module):
 
         # TODO: ScaleNet - learn best scaling
 
-        return outputs
+        return outputs, edge_index, edge_attr
 
     @property
     def total_layers(self):
