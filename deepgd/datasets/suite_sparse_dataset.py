@@ -52,6 +52,7 @@ class SuiteSparseDataset(GraphDrawingDataset.from_cls(pyg.data.Dataset)):
 
     @property
     def raw_file_names(self):
+        # This prevents downloading the raw files if processed files exist
         if pyg.data.dataset.files_exist(self.processed_paths):
             return []
         return list(map(lambda graph: f"{graph.name.lower()}.mtx", self.graph_list))

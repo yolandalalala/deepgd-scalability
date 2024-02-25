@@ -7,6 +7,7 @@ from abc import abstractmethod
 from typing import TypeVar, Iterable, Optional, TypedDict, Generic
 from typing_extensions import Self
 import networkx as nx
+import torch
 import torch_geometric as pyg
 
 DATA_ROOT = "datasets"
@@ -147,6 +148,16 @@ class GraphDrawingDataset(Generic[S, T]):
                     raise e
 
             def transform(self, data: T) -> T:
+                name = data.G.graph['name']
+                gt_pos_file = f'{self.processed_dir}/features/gt_pos/{name}.pt'
+                if os.path.exists(gt_pos_file):
+                    data.gt_pos = torch.load(gt_pos_file)
+                else:
+                    layout = nx.drawing.nx_agraph.graphviz_layout(data.G, prog='neato')
+                    pos_list = [layout[n] for n in data.G.nodes]
+                    data.gt_pos = torch.tensor(pos_list)
+                    torch.save(data.gt_pos, gt_pos_file)
+
                 return data
 
             @abstractmethod
